@@ -1,0 +1,9 @@
+Datsets
+- [x] MegaDepth
+- [x] ScanNet
+- [x] VKITTI
+- [ ] CO3D (downloading)
+- [ ] BlendedMVS (downloading)
+- [ ] WildRGB
+- [ ] PointOdyssey
+- [ ] MVS-Synth

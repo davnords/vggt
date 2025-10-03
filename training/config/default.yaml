@@ -2,11 +2,11 @@ defaults:
   - default_dataset.yaml
 
 exp_name: exp001
-img_size: 518
+img_size: 512
 num_workers: 8
 seed_value: 42
 accum_steps: 2    # We did not use gradient accumulation in our training, while if you suffer from OOM, you can try to use it.
-patch_size: 14
+patch_size: 16
 val_epoch_freq: 5
 max_img_per_gpu: 48
 
@@ -28,10 +28,50 @@ data:
     dataset:
       _target_: data.composed_dataset.ComposedDataset
       dataset_configs:
-        - _target_: data.datasets.co3d.Co3dDataset
+        # - _target_: data.datasets.megadepth.MegadepthDataset
+        #   split: train
+        #   MEGADEPTH_DIR: /mimer/NOBACKUP/groups/snic2022-6-266/data/megadepth
+        #   MEGADEPTH_ANNOTATION_DIR: /mimer/NOBACKUP/groups/snic2022-6-266/davnords/vggt/annotations
+        #   len_train: 100000        
+        # - _target_: data.datasets.scannet.ScanNetDataset
+        #   split: train
+        #   SCANNET_DIR: /mimer/NOBACKUP/groups/3d-dl/scannet/scans/scans_train
+        #   SCANNET_ANNOTATION_DIR: /mimer/NOBACKUP/groups/snic2022-6-266/davnords/vggt/annotations
+        #   len_train: 100000
+        - _target_: data.datasets.vkitti.VKittiDataset
           split: train
-          CO3D_DIR: /YOUR/PATH/TO/CO3D
-          CO3D_ANNOTATION_DIR: /YOUR/PATH/TO/CO3D_ANNOTATION
+          VKitti_DIR: /mimer/NOBACKUP/groups/3d-dl/vkitti
+          len_train: 100000
+          expand_ratio: 8 
+        # - _target_: data.datasets.co3d.Co3dDataset
+        #   split: train
+        #   CO3D_DIR: /mimer/NOBACKUP/groups/3d-dl/co3d_full
+        #   CO3D_ANNOTATION_DIR: /mimer/NOBACKUP/groups/snic2022-6-266/davnords/co3d_anno/cleaned
+        # - _target_: data.datasets.mvssynth.MVSSynthDataset
+        #   split: train
+        #   MVSSYNTH_DIR: /mimer/NOBACKUP/groups/3d-dl/MVS-Synth/GTAV_540
+        #   MVSSYNTH_ANNOTATION_DIR: /mimer/NOBACKUP/groups/snic2022-6-266/davnords/vggt/annotations
+        #   len_train: 100000
+        # - _target_: data.datasets.blendedmvs.BlendedMVSDataset
+        #   split: train
+        #   BLENDEDMVS_DIR: /mimer/NOBACKUP/groups/3d-dl/blendedmvs_full
+        #   BLENDEDMVS_ANNOTATION_DIR: /mimer/NOBACKUP/groups/snic2022-6-266/davnords/vggt/annotations
+        #   len_train: 100000
+        # - _target_: data.datasets.pointodyssey.PointOdysseyDataset
+        #   split: train
+        #   POINTODYSSEY_DIR: /mimer/NOBACKUP/groups/3d-dl/pointodyssey
+        #   POINTODYSSEY_ANNOTATION_DIR: /mimer/NOBACKUP/groups/snic2022-6-266/davnords/vggt/annotations
+        #   len_train: 100000
+        # - _target_: data.datasets.hypersim.HypersimDataset
+        #   split: train
+        #   HYPERSIM_DIR: /mimer/NOBACKUP/groups/3d-dl/ml-hypersim/contrib/99991/downloads
+        #   HYPERSIM_ANNOTATION_DIR: /mimer/NOBACKUP/groups/snic2022-6-266/davnords/vggt/annotations
+        #   len_train: 100000
+        # - _target_: data.datasets.wildrgbd.WildrgbdDataset
+        #   split: train
+        #   WILDRGBD_DIR: /mimer/NOBACKUP/groups/3d-dl/wildrgbd
+        #   WILDRGBD_ANNOTATION_DIR: /mimer/NOBACKUP/groups/snic2022-6-266/davnords/vggt/annotations
+        #   len_train: 100000
   val:
     _target_: data.dynamic_dataloader.DynamicTorchDataset
     num_workers: ${num_workers}
@@ -43,11 +83,14 @@ data:
     dataset:
       _target_: data.composed_dataset.ComposedDataset
       dataset_configs:
+        # - _target_: data.datasets.megadepth.MegadepthDataset
+        #   split: test
+        #   MEGADEPTH_DIR: /mimer/NOBACKUP/groups/snic2022-6-266/data/megadepth
+        #   MEGADEPTH_ANNOTATION_DIR: /mimer/NOBACKUP/groups/snic2022-6-266/davnords/vggt/annotations
         - _target_: data.datasets.co3d.Co3dDataset
           split: test
-          CO3D_DIR: /YOUR/PATH/TO/CO3D
-          CO3D_ANNOTATION_DIR: /YOUR/PATH/TO/CO3D_ANNOTATION
-
+          CO3D_DIR: /mimer/NOBACKUP/groups/3d-dl/co3d_full
+          CO3D_ANNOTATION_DIR: /mimer/NOBACKUP/groups/snic2022-6-266/davnords/co3d_anno/cleaned
 
 logging:
   log_dir: logs
@@ -86,7 +129,7 @@ logging:
 checkpoint:
   save_dir: logs/${exp_name}/ckpts
   save_freq: 5
-  resume_checkpoint_path: /YOUR/PATH/TO/CKPT
+  resume_checkpoint_path: # /YOUR/PATH/TO/CKPT
   strict: False
 
 
@@ -107,9 +150,6 @@ loss:
   #   valid_range: 0.98
   track: null   
 
-
-
-
 optim:
   param_group_modifiers: False
 
@@ -119,7 +159,7 @@ optim:
     weight_decay: 0.05
 
   frozen_module_names:
-      - "*aggregator*"  # example, freeze the aggregator
+      # - "*aggregator*"  # example, freeze the aggregator
 
   amp:
     enabled: True
@@ -154,18 +194,16 @@ optim:
           _target_: fvcore.common.param_scheduler.ConstantParamScheduler
           value: 0.05
 
-
-
-
 max_epochs: 20
 
 model:
-  _target_: vggt.models.vggt.VGGT
+  _target_: vggt.models.vggt_small.VGGT
   enable_camera: True
   enable_depth: True
   enable_point: False
   enable_track: False
-
+  patch_size: ${patch_size}
+  patch_embed: dinov3 # crocov2 # mum # dinov3
 
 distributed:
   # check https://docs.pytorch.org/docs/stable/generated/torch.nn.parallel.DistributedDataParallel.html for options

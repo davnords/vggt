@@ -376,6 +376,7 @@ class Trainer:
 
     def run_train(self):
         """Runs the main training loop over all epochs."""
+        print('Max epochs: ', self.max_epochs)
         while self.epoch < self.max_epochs:
             set_seeds(self.seed_value + self.epoch * 100, self.max_epochs, self.distributed_rank)
             
@@ -515,6 +516,7 @@ class Trainer:
             param_names = ",".join(config['module_names'])
             loss_meters[f"Grad/{param_names}"] = AverageMeter(f"Grad/{param_names}", self.device, ":.4f")
 
+        print('Num batches: ', len(train_loader))
 
         progress = ProgressMeter(
             num_batches=len(train_loader),
