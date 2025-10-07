@@ -17,6 +17,8 @@ os.environ["HYDRA_FULL_ERROR"] = "1"
 # Enables asynchronous error handling for NCCL, which can prevent hangs.
 os.environ["NCCL_ASYNC_ERROR_HANDLING"] = "1"
 
+os.environ['WANDB_API_KEY'] = "fa8a780a903c6eb701a2b09d2b54cf5aa1ceff38"
+
 
 import contextlib
 import gc
@@ -41,7 +43,7 @@ from train_utils.general import *
 from train_utils.logging import setup_logging
 from train_utils.normalization import normalize_camera_extrinsics_and_points_batch
 from train_utils.optimizer import construct_optimizers
-
+import wandb
 
 class Trainer:
     """
@@ -77,6 +79,8 @@ class Trainer:
         loss: Optional[Dict[str, Any]] = None,
         env_variables: Optional[Dict[str, Any]] = None,
         accum_steps: int = 1,
+        log_wandb: bool = False,
+        exp_name: str = "exp001",
         **kwargs,
     ):
         """
@@ -103,6 +107,9 @@ class Trainer:
         """
         self._setup_env_variables(env_variables)
         self._setup_timers()
+
+        wandb_mode = "online" if log_wandb and self.rank == 0 else "disabled"
+        wandb.init(project="vggt", entity="georgs-team", name=exp_name, reinit=False, mode = wandb_mode)
 
         # Store Hydra configurations
         self.data_conf = data
@@ -429,9 +436,16 @@ class Trainer:
         loss_meters = {
             name: AverageMeter(name, self.device, ":.4f") for name in loss_names
         }
+
+        iters_per_epoch = len(val_loader)
+        limit_val_batches = (
+            iters_per_epoch
+            if self.limit_val_batches is None
+            else self.limit_val_batches
+        )
         
         progress = ProgressMeter(
-            num_batches=len(val_loader),
+            num_batches=limit_val_batches,
             meters=[
                 batch_time,
                 data_time,
@@ -446,12 +460,6 @@ class Trainer:
         self.model.eval()
         end = time.time()
 
-        iters_per_epoch = len(val_loader)
-        limit_val_batches = (
-            iters_per_epoch
-            if self.limit_val_batches is None
-            else self.limit_val_batches
-        )
 
         for data_iter, batch in enumerate(val_loader):
             if data_iter > limit_val_batches:
@@ -496,6 +504,13 @@ class Trainer:
             if data_iter % self.logging_conf.log_freq == 0:
                 progress.display(data_iter)
 
+        avg_stats = {}
+
+        for name, meter in loss_meters.items():
+            avg_stats[f"{name}_val"] = meter.avg
+
+        wandb.log(avg_stats, step=self.steps[phase])
+        print("Validation averages:", avg_stats)
 
         return True
 
@@ -516,10 +531,17 @@ class Trainer:
             param_names = ",".join(config['module_names'])
             loss_meters[f"Grad/{param_names}"] = AverageMeter(f"Grad/{param_names}", self.device, ":.4f")
 
-        print('Num batches: ', len(train_loader))
+
+        iters_per_epoch = len(train_loader)
+        limit_train_batches = (
+            iters_per_epoch
+            if self.limit_train_batches is None
+            else self.limit_train_batches
+        )
+        print('Num batches: ', limit_train_batches)
 
         progress = ProgressMeter(
-            num_batches=len(train_loader),
+            num_batches=limit_train_batches,
             meters=[
                 batch_time,
                 data_time,
@@ -533,13 +555,6 @@ class Trainer:
 
         self.model.train()
         end = time.time()
-
-        iters_per_epoch = len(train_loader)
-        limit_train_batches = (
-            iters_per_epoch
-            if self.limit_train_batches is None
-            else self.limit_train_batches
-        )
         
         if self.gradient_clipper is not None:
             # setup gradient clipping at the beginning of training
@@ -634,6 +649,9 @@ class Trainer:
 
             if data_iter % self.logging_conf.log_freq == 0:
                 progress.display(data_iter)
+                wandb.log({
+                    **{name: meter.avg for name, meter in loss_meters.items()}
+                })
 
         return True
 

@@ -151,124 +151,140 @@ class HypersimDataset(BaseDataset):
         seq_name: str = None,
         ids: list = None,
         aspect_ratio: float = 1.0,
+        max_retries: int = 10,
     ) -> dict:
         """
         Retrieve data for a specific sequence.
-
+        
         Args:
             seq_index (int): Index of the sequence to retrieve.
             img_per_seq (int): Number of images per sequence.
             seq_name (str): Name of the sequence.
             ids (list): Specific IDs to retrieve.
             aspect_ratio (float): Aspect ratio for image processing.
-
+            max_retries (int): Maximum number of retry attempts.
+            
         Returns:
             dict: A batch of data including images, depths, and other metadata.
         """
-        if self.inside_random:
-            seq_index = random.randint(0, self.sequence_list_len - 1)
+        original_seq_index = seq_index
+        original_seq_name = seq_name
+        
+        for attempt in range(max_retries):
+            # Force new random sequence on retry
+            if attempt > 0 or self.inside_random:
+                seq_index = random.randint(0, self.sequence_list_len - 1)
+                seq_name = None  # Reset seq_name to force using the new index
+                
+            if seq_name is None:
+                seq_name = self.sequence_list[seq_index]
+
+            metadata = self.data_store[seq_name]
+
+            if ids is None or attempt > 0:  # Also resample IDs on retry
+                ids = np.random.choice(
+                    len(metadata), img_per_seq, replace=self.allow_duplicate_img
+                )
+
+            annos = [metadata[i] for i in ids]
+            target_image_shape = self.get_target_shape(aspect_ratio)
+
+            images = []
+            depths = []
+            cam_points = []
+            world_points = []
+            point_masks = []
+            extrinsics = []
+            intrinsics = []
+            image_paths = []
+            original_sizes = []
             
-        if seq_name is None:
-            seq_name = self.sequence_list[seq_index]
+            valid_sequence = True
 
-        metadata = self.data_store[seq_name]
+            for anno in annos:
+                filepath = anno["filepath"]
+                image_path = osp.join(self.HYPERSIM_DIR, filepath)
+                image = read_image_cv2(image_path)
 
-        if ids is None:
-            ids = np.random.choice(
-                len(metadata), img_per_seq, replace=self.allow_duplicate_img
-            )
+                if self.load_depth:
+                    meters_per_asset = anno["meters_per_asset"]
+                    depth_path = osp.join(self.HYPERSIM_DIR, anno["depthpath"])
+                    distance = (
+                        torch.tensor(load_distance(depth_path)).float() / meters_per_asset
+                    )
+                    intrinsic = torch.tensor(anno["intri"]).reshape(3, 3).float()
 
-        annos = [metadata[i] for i in ids]
+                    depth = depth_from_distance(distance, intrinsic).float()
+                    depth[depth.isnan()] = 0
 
-        target_image_shape = self.get_target_shape(aspect_ratio)
+                    depth_map = depth.squeeze(-1).numpy()
+                    depth_map = threshold_depth_map(
+                        depth_map, min_percentile=-1, max_percentile=98
+                    )
+                else:
+                    depth_map = None
 
-        images = []
-        depths = []
-        cam_points = []
-        world_points = []
-        point_masks = []
-        extrinsics = []
-        intrinsics = []
-        image_paths = []
-        original_sizes = []
+                original_size = np.array(image.shape[:2])
+                extri_opencv = np.array(anno["extri"])
+                intri_opencv = np.array(anno["intri"])
+                cx = intri_opencv[0, 2]
+                cy = intri_opencv[1, 2]
 
-        for anno in annos:
-            filepath = anno["filepath"]
+                if cy > 768 or cx > 1024:
+                    valid_sequence = False
+                    break  # Break and try a different sequence
 
-            image_path = osp.join(self.HYPERSIM_DIR, filepath)
-            image = read_image_cv2(image_path)
+                # Setting zero skew
+                intri_opencv[0, 1] = 0.0
 
-            if self.load_depth:
-                meters_per_asset = anno["meters_per_asset"]
-                depth_path = osp.join(self.HYPERSIM_DIR, anno["depthpath"])
-                distance = (
-                    torch.tensor(load_distance(depth_path)).float()
-                    # / meters_per_asset
+                (
+                    image,
+                    depth_map,
+                    extri_opencv,
+                    intri_opencv,
+                    world_coords_points,
+                    cam_coords_points,
+                    point_mask,
+                    _,
+                ) = self.process_one_image(
+                    image,
+                    depth_map,
+                    extri_opencv,
+                    intri_opencv,
+                    original_size,
+                    target_image_shape,
+                    filepath=filepath,
                 )
-                intrinsic = torch.tensor(anno["intri"]).reshape(3, 3).float()
 
-                depth = depth_from_distance(distance, intrinsic).float()
-                depth[depth.isnan()] = 0
+                images.append(image)
+                depths.append(depth_map)
+                extrinsics.append(extri_opencv)
+                intrinsics.append(intri_opencv)
+                cam_points.append(cam_coords_points)
+                world_points.append(world_coords_points)
+                point_masks.append(point_mask)
+                image_paths.append(image_path)
+                original_sizes.append(original_size)
 
-                depth_map = depth.squeeze(-1).numpy()
-
-                # print('Max and min depth: ', np.max(depth_map), np.min(depth_map), depth_path)
-                depth_map = threshold_depth_map(
-                    depth_map, min_percentile=-1, max_percentile=98
-                )
-            else:
-                depth_map = None
-
-            original_size = np.array(image.shape[:2])
-            extri_opencv = np.array(anno["extri"])
-            intri_opencv = np.array(anno["intri"])
-
-            # Setting zero skew
-            intri_opencv[0, 1] = 0.0
-
-
-            (
-                image,
-                depth_map,
-                extri_opencv,
-                intri_opencv,
-                world_coords_points,
-                cam_coords_points,
-                point_mask,
-                _,
-            ) = self.process_one_image(
-                image,
-                depth_map,
-                extri_opencv,
-                intri_opencv,
-                original_size,
-                target_image_shape,
-                filepath=filepath,
-            )
-
-            images.append(image)
-            depths.append(depth_map)
-            extrinsics.append(extri_opencv)
-            intrinsics.append(intri_opencv)
-            cam_points.append(cam_coords_points)
-            world_points.append(world_coords_points)
-            point_masks.append(point_mask)
-            image_paths.append(image_path)
-            original_sizes.append(original_size)
-
-        set_name = "Hypersim"
-
-        batch = {
-            "seq_name": set_name + "_" + seq_name,
-            "ids": ids,
-            "frame_num": len(extrinsics),
-            "images": images,
-            "depths": depths,
-            "extrinsics": extrinsics,
-            "intrinsics": intrinsics,
-            "cam_points": cam_points,
-            "world_points": world_points,
-            "point_masks": point_masks,
-            "original_sizes": original_sizes,
-        }
-        return batch
+            if valid_sequence:
+                set_name = "Hypersim"
+                batch = {
+                    "seq_name": set_name + "_" + seq_name,
+                    "ids": ids,
+                    "frame_num": len(extrinsics),
+                    "images": images,
+                    "depths": depths,
+                    "extrinsics": extrinsics,
+                    "intrinsics": intrinsics,
+                    "cam_points": cam_points,
+                    "world_points": world_points,
+                    "point_masks": point_masks,
+                    "original_sizes": original_sizes,
+                }
+                return batch
+            
+            # Reset for next attempt
+            seq_index = original_seq_index
+            seq_name = original_seq_name
+        
+        raise RuntimeError(f"Failed to find valid sequence after {max_retries} attempts")

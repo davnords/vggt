@@ -67,7 +67,7 @@ if __name__ == "__main__":
 
     for scene_path in tqdm(list(data_root.iterdir())):
         scene_name = scene_path.name
-        if scene_name in ["ai_024_012"]:
+        if scene_name in ["ai_024_012", "ai_026_008", "ai_026_013"]:
             print("Skipping problematic scene " + scene_name)
             continue
         if (scene_name[:-4] not in scene_names) and (scene_name not in scene_names):
@@ -180,6 +180,8 @@ if __name__ == "__main__":
             img_id: idx for idx, img_id in enumerate(image_ids)
         }
 
+        # K_fixed = K.copy()
+        # K_fixed[0,2], K_fixed[1,2] = K[1,2], K[0,2]
         intrinsic = torch.tensor(K).reshape(3, 3).float()
 
         sequence_data = []
@@ -196,8 +198,7 @@ if __name__ == "__main__":
             # depth[depth.isnan()] = 0
 
 
-            T_w2c = torch.linalg.inv(T)
-            T_w2c = T_w2c[:3].numpy().tolist()
+            T_w2c = T[:3].numpy().tolist()
             frame_data = {
                 "filepath": im_path.as_posix().split('downloads/')[1],
                 "extri": T_w2c,
@@ -210,7 +211,7 @@ if __name__ == "__main__":
         
 root = "/mimer/NOBACKUP/groups/snic2022-6-266/davnords/vggt"
 
-with gzip.open(root+"/annotations/hypersim.jgz", "wt", encoding="utf-8") as f:
+with gzip.open(root+"/annotations/hypersim/train.jgz", "wt", encoding="utf-8") as f:
     json.dump(out, f, ensure_ascii=False, indent=4)
 
 print(f"Processed {len(out)} scenes with a total of {sum(len(v) for v in out.values())} images.")

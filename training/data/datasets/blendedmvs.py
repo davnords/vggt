@@ -198,7 +198,6 @@ class BlendedMVSDataset(BaseDataset):
                 depth_path = osp.join(self.BLENDEDMVS_DIR, anno["depthpath"])
 
                 depth_map, _ = read_pfm(depth_path)
-                print('Depthmap max and min: ', depth_map.max(), depth_map.min(), image_path)
                 depth_map = threshold_depth_map(depth_map, max_percentile=98, min_percentile=-1)
                 # depth_path = image_path.replace("/images", "/depths") + ".geometric.png"
         

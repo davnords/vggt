@@ -8,8 +8,27 @@ import os.path as osp
 
 root = Path("/mimer/NOBACKUP/groups/3d-dl/co3d_full")
 
+def co3d_annotation_to_opencv_pose(frame_data):
+    p = frame_data['viewpoint']['principal_point']
+    f = frame_data['viewpoint']['focal_length']
+    h, w = frame_data['image']['size']
+    K = np.eye(3)
+    s = (min(h, w) - 1) / 2
+    K[0, 0] = f[0] * (w - 1) / 2
+    K[1, 1] = f[1] * (h - 1) / 2
+    K[0, 2] = -p[0] * s + (w - 1) / 2
+    K[1, 2] = -p[1] * s + (h - 1) / 2
 
+    R = np.asarray(frame_data['viewpoint']['R']).T   # note the transpose here
+    T = np.asarray(frame_data['viewpoint']['T'])
+    pose = np.concatenate([R,T[:,None]],1)
+    pose = np.diag([-1,-1,1]).astype(np.float32) @ pose # flip the direction of x,y axis
+
+    return pose, K
+
+out = {}
 for category_dir in tqdm(root.iterdir()):
+    print('Processing category: ', category_dir.name)
     frame_file = osp.join(category_dir, "frame_annotations.jgz")
     sequence_file = osp.join(category_dir, "sequence_annotations.jgz")
 
@@ -25,8 +44,7 @@ for category_dir in tqdm(root.iterdir()):
     # Convert to a sorted list if you want
     train_sequences = sorted(train_sequences)
 
-    print('Set list: ', train_sequences)
-    break
+    # print('Set list: ', train_sequences)
 
     with gzip.open(frame_file, "r") as fin:
         frame_data = json.loads(fin.read())
@@ -38,56 +56,49 @@ for category_dir in tqdm(root.iterdir()):
         sequence_name = f_data["sequence_name"]
         frame_data_processed.setdefault(sequence_name, {})[f_data["frame_number"]] = f_data
 
-    print('frame data: ', frame_data_processed['20_716_1426'])
 
-    # intrinsics = read_scannet_intrinsic(scene_dir / "intrinsic/intrinsic_color.txt")
-    
-    break
+    for seq in train_sequences:
+        # print(frame_data_processed[seq])
+        seq_data = frame_data_processed[seq]
+        scene_dir = category_dir / seq
+        images_dir = scene_dir / "images"
+        frames = sorted([p.name for p in images_dir.iterdir() if p.suffix == ".jpg"])
+        out_sequence_data = []
+        for i, frame in enumerate(frames):
+            frame_data = seq_data[i]
+            # viewpoint = frame_data['viewpoint']
+            # R = np.array(viewpoint['R'])
+            # T = np.array(viewpoint['T']).reshape(3, 1)
+            # extrinsic = np.eye(4)
+            # extrinsic[:3, :3] = R
+            # extrinsic[:3, 3:] = T
 
+            # fx, fy = viewpoint['focal_length']
+            # cx, cy = viewpoint['principal_point']
 
+            # intrinsic = np.array([
+            #     [fx, 0, cx],
+            #     [0, fy, cy],
+            #     [0, 0, 1]
+            # ])
 
-    frames = sorted([p.name for p in (scene_dir / "color").iterdir() if p.suffix == ".jpg"])
+            extrinsic, intrinsic = co3d_annotation_to_opencv_pose(frame_data)
+            # extrinsic = np.vstack([extrinsic, [0, 0, 0, 1]])
+            # extrinsic = np.linalg.inv(extrinsic)
 
-    # Maybe resized undistorted images are too high resolution?
-    num_frames = len(frames)
-
-    # Since the images are taken in a sequence we will just chunk up the sequences
-
-    sequences = []
-    # Calculate how many full chunks we can take, stopping before the last chunk
-    num_full_chunks = (num_frames - 1) // chunk_size  # leave room for overflow in last chunk
-
-    for i in range(num_full_chunks - 1):
-        sequences.append(frames[i * chunk_size: (i + 1) * chunk_size])
-
-    # Last chunk gets the rest of the frames
-    sequences.append(frames[(num_full_chunks - 1) * chunk_size:])
-
-    for i, seq in enumerate(sequences):
-        sequence_data = []
-        for frame in seq:
-            pose_path = scene_dir / "pose" / (frame.replace(".jpg", ".txt"))
-            pose_w2c = read_scannet_pose(pose_path)
             frame_data = {
-                "filepath": f"{scene_dir.name}/color/{frame}",
-                "extri": pose_w2c[:3].tolist(),
-                "intri": intrinsics.tolist(),
-                "depthpath": f"{scene_dir.name}/depth/{frame.replace('.jpg', '.png')}",
+                "filepath": frame_data['image']['path'],
+                "extri": extrinsic[:3].tolist(),
+                "intri": intrinsic.tolist(),
             }
-            # Sanity check
-            assert len(pose_w2c) == 4 and len(pose_w2c[0]) == 4
-            assert len(intrinsics) == 3 and len(intrinsics[0]) == 3
+            out_sequence_data.append(frame_data)
+            # print('Frame data: ', frame_data)
+        out[category_dir.name+"_"+seq] = out_sequence_data
 
-            sequence_data.append(frame_data)
+root = "/mimer/NOBACKUP/groups/snic2022-6-266/davnords/vggt"
 
-        out[scene_dir.name+"_"+str(i)] = sequence_data
+with gzip.open(root+"/annotations/co3d/train.jgz", "wt", encoding="utf-8") as f:
+    json.dump(out, f, ensure_ascii=False, indent=4)
 
-    print(f"  Created {len(sequences)} sequences for {scene_dir.name}")
-
-# root = "/mimer/NOBACKUP/groups/snic2022-6-266/davnords/vggt"
-
-# with gzip.open(root+"/annotations/scannet.jgz", "wt", encoding="utf-8") as f:
-#     json.dump(out, f, ensure_ascii=False, indent=4)
-
-# print(f"Processed {len(out)} scenes with a total of {sum(len(v) for v in out.values())} images.")
+print(f"Processed {len(out)} scenes with a total of {sum(len(v) for v in out.values())} images.")
 

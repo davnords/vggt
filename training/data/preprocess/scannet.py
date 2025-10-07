@@ -12,6 +12,10 @@ def read_scannet_pose(path):
         pose_w2c (np.ndarray): (4, 4)
     """
     cam2world = np.loadtxt(path, delimiter=' ')
+
+    if not np.isfinite(cam2world).all():
+        return None
+
     world2cam = np.linalg.inv(cam2world)
     return world2cam
 
@@ -29,7 +33,8 @@ out = {}
 
 chunk_size = 24
 
-
+valid_frames = 0
+invalid_frames = 0
 for scene_dir in tqdm(root.iterdir()):
 
     intrinsics = read_scannet_intrinsic(scene_dir / "intrinsic/intrinsic_color.txt")
@@ -51,11 +56,22 @@ for scene_dir in tqdm(root.iterdir()):
     # Last chunk gets the rest of the frames
     sequences.append(frames[(num_full_chunks - 1) * chunk_size:])
 
+    
     for i, seq in enumerate(sequences):
         sequence_data = []
         for frame in seq:
             pose_path = scene_dir / "pose" / (frame.replace(".jpg", ".txt"))
             pose_w2c = read_scannet_pose(pose_path)
+            if pose_w2c is None:
+                print(f"Warning: Pose contains NaN, skipping frame {pose_path}")
+                invalid_frames += 1
+                continue
+            valid_frames += 1
+            R = pose_w2c[:3, :3]
+            assert not np.isnan(pose_w2c).any(), f"Pose contains NaN: {pose_w2c}"
+            # print('Determinant of R: ', np.linalg.det(R))
+            # assert np.allclose(np.linalg.det(R), 1.0, atol=1e-3), f"Rotation matrix determinant is not 1 but {np.linalg.det(R)}, R is {R}"
+
             frame_data = {
                 "filepath": f"{scene_dir.name}/color/{frame}",
                 "extri": pose_w2c[:3].tolist(),
@@ -72,9 +88,12 @@ for scene_dir in tqdm(root.iterdir()):
 
     print(f"  Created {len(sequences)} sequences for {scene_dir.name}")
 
+
+print('Valid frames: ', valid_frames)
+print('Invalid frames: ', invalid_frames)
 root = "/mimer/NOBACKUP/groups/snic2022-6-266/davnords/vggt"
 
-with gzip.open(root+"/annotations/scannet.jgz", "wt", encoding="utf-8") as f:
+with gzip.open(root+"/annotations/scannet/train.jgz", "wt", encoding="utf-8") as f:
     json.dump(out, f, ensure_ascii=False, indent=4)
 
 print(f"Processed {len(out)} scenes with a total of {sum(len(v) for v in out.values())} images.")

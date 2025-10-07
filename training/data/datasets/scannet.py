@@ -159,8 +159,11 @@ class ScanNetDataset(BaseDataset):
 
             if self.load_depth:
                 depth_path = osp.join(self.SCANNET_DIR, anno["depthpath"])
+                depth = cv2.imread(depth_path, cv2.IMREAD_UNCHANGED)
+                depth_map = depth / 1000
+
                 # depth_map = self.load_depth_image(depth_path)
-                depth_map = read_depth(depth_path, 1.0) / 1000
+                # depth_map = read_depth(depth_path, 1.0) / 1000
                 depth_map = threshold_depth_map(depth_map, max_percentile=98, min_percentile=-1)
                 # depth_path = image_path.replace("/images", "/depths") + ".geometric.png"
         
@@ -178,8 +181,9 @@ class ScanNetDataset(BaseDataset):
 
             original_size = np.array(image.shape[:2])
             extri_opencv = np.array(anno["extri"])
+            # print('Extri: ', extri_opencv)
             intri_opencv = np.array(anno["intri"])
-
+            # print('Intri: ', intri_opencv)
             (
                 image,
                 depth_map,

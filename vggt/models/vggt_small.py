@@ -15,11 +15,11 @@ from vggt.heads.track_head import TrackHead
 from typing import Literal
 
 class VGGT(nn.Module, PyTorchModelHubMixin):
-    def __init__(self, img_size=512, patch_size=16, embed_dim=384,
+    def __init__(self, img_size=512, patch_size=16, embed_dim=384, depth=6, num_heads=6,
                  enable_camera=True, enable_point=True, enable_depth=True, enable_track=True, patch_embed: Literal["mum", "dinov3", "crocov2", "dinov2"]="dinov3",
                  ):
         super().__init__()
-        self.aggregator = Aggregator(img_size=img_size, patch_size=patch_size, embed_dim=embed_dim, patch_embed=patch_embed)
+        self.aggregator = Aggregator(img_size=img_size, patch_size=patch_size, embed_dim=embed_dim, patch_embed=patch_embed, depth=depth, num_heads=num_heads)
 
         self.camera_head = CameraHead(dim_in=2 * embed_dim) if enable_camera else None
         self.point_head = DPTHead(dim_in=2 * embed_dim, output_dim=4, activation="inv_log", conf_activation="expp1", patch_size=patch_size,

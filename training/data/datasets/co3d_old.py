@@ -1,3 +1,8 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the license found in the
+# LICENSE file in the root directory of this source tree.
 
 import gzip
 import json
@@ -8,46 +13,81 @@ import logging
 import cv2
 import random
 import numpy as np
-import h5py
-import imageio
+
 
 from data.dataset_util import *
 from data.base_dataset import BaseDataset
 
-import numpy as np
-import torch
-import cv2
 
-def read_img_depth_pose(depth_path):
-    raw_depth = np.asarray(imageio.imread(depth_path)[:])
-    raw_depth = np.clip(raw_depth, 0.1, 1000.0)
-    # print('Raw depth shape:', raw_depth.shape)
-    return raw_depth[:, :, 0]
+SEEN_CATEGORIES = [
+    "apple",
+    "backpack",
+    "banana",
+    "baseballbat",
+    "baseballglove",
+    "bench",
+    "bicycle",
+    "bottle",
+    "bowl",
+    "broccoli",
+    "cake",
+    "car",
+    "carrot",
+    "cellphone",
+    "chair",
+    "cup",
+    "donut",
+    "hairdryer",
+    "handbag",
+    "hydrant",
+    "keyboard",
+    "laptop",
+    "microwave",
+    "motorcycle",
+    "mouse",
+    "orange",
+    "parkingmeter",
+    "pizza",
+    "plant",
+    "stopsign",
+    "teddybear",
+    "toaster",
+    "toilet",
+    "toybus",
+    "toyplane",
+    "toytrain",
+    "toytruck",
+    "tv",
+    "umbrella",
+    "vase",
+    "wineglass",
+]
 
-class MVSSynthDataset(BaseDataset):
+
+class Co3dDataset(BaseDataset):
     def __init__(
         self,
         common_conf,
         split: str = "train",
-        MVSSYNTH_DIR: str = None,
-        MVSSYNTH_ANNOTATION_DIR: str = None,
+        CO3D_DIR: str = None,
+        CO3D_ANNOTATION_DIR: str = None,
         min_num_images: int = 24,
         len_train: int = 100000,
         len_test: int = 10000,
     ):
         """
-        Initialize the MVSSynthDataset.
+        Initialize the Co3dDataset.
 
         Args:
             common_conf: Configuration object with common settings.
             split (str): Dataset split, either 'train' or 'test'.
-            MVSSYNTH_DIR (str): Directory path to MVSSynth data.
-            MVSSYNTH_ANNOTATION_DIR (str): Directory path to MVSSynth annotations.
+            CO3D_DIR (str): Directory path to CO3D data.
+            CO3D_ANNOTATION_DIR (str): Directory path to CO3D annotations.
             min_num_images (int): Minimum number of images per sequence.
             len_train (int): Length of the training dataset.
             len_test (int): Length of the test dataset.
         Raises:
-            ValueError: If MVSSYNTH_DIR or MVSSYNTH_ANNOTATION_DIR is not specified.
+            ValueError: If CO3D_DIR or CO3D_ANNOTATION_DIR is not specified.
         """
         super().__init__(common_conf=common_conf)
 
@@ -58,14 +98,19 @@ class MVSSynthDataset(BaseDataset):
         self.inside_random = common_conf.inside_random
         self.allow_duplicate_img = common_conf.allow_duplicate_img
 
-        if MVSSYNTH_DIR is None or MVSSYNTH_ANNOTATION_DIR is None:
-            raise ValueError("Both MVSSYNTH_DIR and MVSSYNTH_ANNOTATION_DIR must be specified.")
+        if CO3D_DIR is None or CO3D_ANNOTATION_DIR is None:
+            raise ValueError("Both CO3D_DIR and CO3D_ANNOTATION_DIR must be specified.")
+
+        category = sorted(SEEN_CATEGORIES)
+
+        if self.debug:
+            category = ["apple"]
 
         if split == "train":
-            split_name = "train.jgz"
+            split_name_list = ["train"]
             self.len_train = len_train
         elif split == "test":
-            split_name = "test.jgz"
+            split_name_list = ["test"]
             self.len_train = len_test
         else:
             raise ValueError(f"Invalid split: {split}")
@@ -78,37 +123,41 @@ class MVSSynthDataset(BaseDataset):
         self.seqlen = None
         self.min_num_images = min_num_images
 
-        logging.info(f"MVSSYNTH_DIR is {MVSSYNTH_DIR}")
+        logging.info(f"CO3D_DIR is {CO3D_DIR}")
 
-        self.MVSSYNTH_DIR = MVSSYNTH_DIR
-        self.MVSSYNTH_ANNOTATION_DIR = MVSSYNTH_ANNOTATION_DIR
+        self.CO3D_DIR = CO3D_DIR
+        self.CO3D_ANNOTATION_DIR = CO3D_ANNOTATION_DIR
 
-        annotation_file = osp.join(
-            self.MVSSYNTH_ANNOTATION_DIR, "mvssynth", split_name
-        )
-
-        try:
-            with gzip.open(annotation_file, "r") as fin:
-                annotation = json.loads(fin.read())
-        except FileNotFoundError:
-            logging.error(f"Annotation file not found: {annotation_file}")
         total_frame_num = 0
 
-        for seq_name, seq_data in annotation.items():
-            if seq_name in self.invalid_sequence:
-                continue
+        for c in category:
+            for split_name in split_name_list:
+                annotation_file = osp.join(
+                    self.CO3D_ANNOTATION_DIR, f"{c}_{split_name}.jgz"
+                )
 
-            if len(seq_data) < min_num_images:
-                continue
-            total_frame_num += len(seq_data)
-            self.data_store[seq_name] = seq_data
+                try:
+                    with gzip.open(annotation_file, "r") as fin:
+                        annotation = json.loads(fin.read())
+                except FileNotFoundError:
+                    logging.error(f"Annotation file not found: {annotation_file}")
+                    continue
+
+                for seq_name, seq_data in annotation.items():
+                    if len(seq_data) < min_num_images:
+                        continue
+                    if seq_name in self.invalid_sequence:
+                        continue
+                    total_frame_num += len(seq_data)
+                    self.data_store[seq_name] = seq_data
+
         self.sequence_list = list(self.data_store.keys())
         self.sequence_list_len = len(self.sequence_list)
         self.total_frame_num = total_frame_num
 
         status = "Training" if self.training else "Testing"
-        logging.info(f"{status}: MVSSynth Data size: {self.sequence_list_len}")
-        logging.info(f"{status}: MVSSynth Data dataset length: {len(self)}")
+        logging.info(f"{status}: Co3D Data size: {self.sequence_list_len}")
+        logging.info(f"{status}: Co3D Data dataset length: {len(self)}")
 
     def get_data(
         self,
@@ -161,16 +210,22 @@ class MVSSynthDataset(BaseDataset):
         for anno in annos:
             filepath = anno["filepath"]
 
-            image_path = osp.join(self.MVSSYNTH_DIR, filepath)
+            image_path = osp.join(self.CO3D_DIR, filepath)
             image = read_image_cv2(image_path)
 
             if self.load_depth:
-                depth_path = osp.join(self.MVSSYNTH_DIR, anno["depthpath"])
-                d = cv2.imread(depth_path, cv2.IMREAD_ANYDEPTH)
-                d[d > 1e9] = 0.0
-                d[~np.isfinite(d)] = 0.0
-                depth_map = d
-                depth_map = threshold_depth_map(depth_map, max_percentile=98, min_percentile=-1)        
+                depth_path = image_path.replace("/images", "/depths") + ".geometric.png"
+                depth_map = read_depth(depth_path, 1.0)
+
+                # mvs_mask_path = image_path.replace(
+                #     "/images", "/depth_masks"
+                # ).replace(".jpg", ".png")
+                # mvs_mask = cv2.imread(mvs_mask_path, cv2.IMREAD_GRAYSCALE) > 128
+                # depth_map[~mvs_mask] = 0
+
+                depth_map = threshold_depth_map(
+                    depth_map, min_percentile=-1, max_percentile=98
+                )
             else:
                 depth_map = None
 
@@ -207,7 +262,7 @@ class MVSSynthDataset(BaseDataset):
             image_paths.append(image_path)
             original_sizes.append(original_size)
 
-        set_name = "MVSSynth"
+        set_name = "co3d"
 
         batch = {
             "seq_name": set_name + "_" + seq_name,

@@ -163,18 +163,6 @@ class MegadepthDataset(BaseDataset):
                 depth_path = osp.join(self.MEGADEPTH_DIR, anno["depth_path"])
                 depth_map = np.array(h5py.File(depth_path, "r")["depth"])
                 depth_map = threshold_depth_map(depth_map, max_percentile=98, min_percentile=-1)
-                # depth_path = image_path.replace("/images", "/depths") + ".geometric.png"
-                # depth_map = read_depth(depth_path, 1.0)
-        
-                # mvs_mask_path = image_path.replace(
-                #     "/images", "/depth_masks"
-                # ).replace(".jpg", ".png")
-                # mvs_mask = cv2.imread(mvs_mask_path, cv2.IMREAD_GRAYSCALE) > 128
-                # depth_map[~mvs_mask] = 0
-
-                # depth_map = threshold_depth_map(
-                #     depth_map, min_percentile=-1, max_percentile=98
-                # )
                 
             else:
                 depth_map = None

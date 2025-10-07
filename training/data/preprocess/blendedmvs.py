@@ -50,7 +50,7 @@ for scene_dir in tqdm(root.iterdir()):
 
 root = "/mimer/NOBACKUP/groups/snic2022-6-266/davnords/vggt"
 
-with gzip.open(root+"/annotations/blendedmvs.jgz", "wt", encoding="utf-8") as f:
+with gzip.open(root+"/annotations/blendedmvs/train.jgz", "wt", encoding="utf-8") as f:
     json.dump(out, f, ensure_ascii=False, indent=4)
 
 print(f"Processed {len(out)} scenes with a total of {sum(len(v) for v in out.values())} images.")

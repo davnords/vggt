@@ -22,7 +22,7 @@ def load_cam_poses(path):
 
 
 for category_dir in tqdm(root.iterdir()):
-    if category_dir.name.startswith("book") or category_dir.name.endswith('.z01') or category_dir.name.endswith('.py') or category_dir.name.endswith('.zip') or category_dir.name.startswith('.'):
+    if category_dir.name.endswith('.py') or category_dir.name.endswith('.zip') or category_dir.name.startswith('.') or category_dir.name == "chair":
         print('Skipping', category_dir.name)
         continue
     category = category_dir.name
@@ -42,6 +42,7 @@ for category_dir in tqdm(root.iterdir()):
         sequence_data = []
         for i, frame in enumerate(frames):
             frame_id, pose = poses[i]
+            pose = np.linalg.inv(pose)  # to world to cam
             assert frame_id == i
             
             depth_path = scene_dir / "depth" / frame

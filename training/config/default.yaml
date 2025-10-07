@@ -2,6 +2,7 @@ defaults:
   - default_dataset.yaml
 
 exp_name: exp001
+log_wandb: false
 img_size: 512
 num_workers: 8
 seed_value: 42
@@ -10,9 +11,24 @@ patch_size: 16
 val_epoch_freq: 5
 max_img_per_gpu: 48
 
-limit_train_batches: 800
-limit_val_batches: 400
+limit_train_batches: 1000
+limit_val_batches: 100
 
+# Dataset som funkar helt OK: 
+# * Megadepth
+# * VKitti
+# * BlendedMVS
+# * PointOdyssey
+# * WildRGBD 
+# * ScanNet
+
+# Dataset som jag har problem med stabilitet: 
+# 
+# * Hypersim (NaN problem)
+
+# Dataset som jag inte fixat ännu:
+# * Co3D
+# * MVSSynth 
 
 data:
   # The code for data still looks too complicated. I should refactor this again (do I have time?...)
@@ -32,26 +48,27 @@ data:
         #   split: train
         #   MEGADEPTH_DIR: /mimer/NOBACKUP/groups/snic2022-6-266/data/megadepth
         #   MEGADEPTH_ANNOTATION_DIR: /mimer/NOBACKUP/groups/snic2022-6-266/davnords/vggt/annotations
-        #   len_train: 100000        
+        #   len_train: 100000  
         # - _target_: data.datasets.scannet.ScanNetDataset
         #   split: train
         #   SCANNET_DIR: /mimer/NOBACKUP/groups/3d-dl/scannet/scans/scans_train
         #   SCANNET_ANNOTATION_DIR: /mimer/NOBACKUP/groups/snic2022-6-266/davnords/vggt/annotations
         #   len_train: 100000
-        - _target_: data.datasets.vkitti.VKittiDataset
-          split: train
-          VKitti_DIR: /mimer/NOBACKUP/groups/3d-dl/vkitti
-          len_train: 100000
-          expand_ratio: 8 
-        # - _target_: data.datasets.co3d.Co3dDataset
+        # - _target_: data.datasets.vkitti.VKittiDataset
+        #   split: train
+        #   VKitti_DIR: /mimer/NOBACKUP/groups/3d-dl/vkitti
+        #   len_train: 100000
+        #   expand_ratio: 8 
+        # - _target_: data.datasets.co3d.CO3DDataset
         #   split: train
         #   CO3D_DIR: /mimer/NOBACKUP/groups/3d-dl/co3d_full
-        #   CO3D_ANNOTATION_DIR: /mimer/NOBACKUP/groups/snic2022-6-266/davnords/co3d_anno/cleaned
-        # - _target_: data.datasets.mvssynth.MVSSynthDataset
-        #   split: train
-        #   MVSSYNTH_DIR: /mimer/NOBACKUP/groups/3d-dl/MVS-Synth/GTAV_540
-        #   MVSSYNTH_ANNOTATION_DIR: /mimer/NOBACKUP/groups/snic2022-6-266/davnords/vggt/annotations
-        #   len_train: 100000
+        #   CO3D_ANNOTATION_DIR: /mimer/NOBACKUP/groups/snic2022-6-266/davnords/vggt/annotations
+          # CO3D_ANNOTATION_DIR: /mimer/NOBACKUP/groups/snic2022-6-266/davnords/co3d_anno/cleaned
+        - _target_: data.datasets.mvssynth.MVSSynthDataset
+          split: train
+          MVSSYNTH_DIR: /mimer/NOBACKUP/groups/3d-dl/MVS-Synth/GTAV_540
+          MVSSYNTH_ANNOTATION_DIR: /mimer/NOBACKUP/groups/snic2022-6-266/davnords/vggt/annotations
+          len_train: 100000
         # - _target_: data.datasets.blendedmvs.BlendedMVSDataset
         #   split: train
         #   BLENDEDMVS_DIR: /mimer/NOBACKUP/groups/3d-dl/blendedmvs_full
@@ -83,14 +100,14 @@ data:
     dataset:
       _target_: data.composed_dataset.ComposedDataset
       dataset_configs:
-        # - _target_: data.datasets.megadepth.MegadepthDataset
-        #   split: test
-        #   MEGADEPTH_DIR: /mimer/NOBACKUP/groups/snic2022-6-266/data/megadepth
-        #   MEGADEPTH_ANNOTATION_DIR: /mimer/NOBACKUP/groups/snic2022-6-266/davnords/vggt/annotations
-        - _target_: data.datasets.co3d.Co3dDataset
+        - _target_: data.datasets.megadepth.MegadepthDataset
           split: test
-          CO3D_DIR: /mimer/NOBACKUP/groups/3d-dl/co3d_full
-          CO3D_ANNOTATION_DIR: /mimer/NOBACKUP/groups/snic2022-6-266/davnords/co3d_anno/cleaned
+          MEGADEPTH_DIR: /mimer/NOBACKUP/groups/snic2022-6-266/data/megadepth
+          MEGADEPTH_ANNOTATION_DIR: /mimer/NOBACKUP/groups/snic2022-6-266/davnords/vggt/annotations
+        # - _target_: data.datasets.co3d.Co3dDataset
+        #   split: test
+        #   CO3D_DIR: /mimer/NOBACKUP/groups/3d-dl/co3d_full
+        #   CO3D_ANNOTATION_DIR: /mimer/NOBACKUP/groups/snic2022-6-266/davnords/co3d_anno/cleaned
 
 logging:
   log_dir: logs
@@ -155,7 +172,7 @@ optim:
 
   optimizer:
     _target_: torch.optim.AdamW
-    lr: 5e-5
+    lr: 1e-4 # 5e-5
     weight_decay: 0.05
 
   frozen_module_names:
@@ -183,9 +200,9 @@ optim:
           schedulers:
             - _target_: fvcore.common.param_scheduler.LinearParamScheduler
               start_value: 1e-8
-              end_value: 5e-5
+              end_value: ${optim.optimizer.lr}
             - _target_: fvcore.common.param_scheduler.CosineParamScheduler
-              start_value: 5e-5
+              start_value: ${optim.optimizer.lr}
               end_value: 1e-8
           lengths: [0.05, 0.95]
           interval_scaling: ['rescaled', 'rescaled']
@@ -194,10 +211,25 @@ optim:
           _target_: fvcore.common.param_scheduler.ConstantParamScheduler
           value: 0.05
 
-max_epochs: 20
+max_epochs: 100
+
+# Base: 
+# embed_dim=768
+# depth=12
+# num_heads=12
+
+# Large: 
+# embed_dim=1024
+# depth=24
+# num_heads=16
 
 model:
   _target_: vggt.models.vggt_small.VGGT
+  img_size: ${img_size}
+  embed_dim: 1024
+  depth: 6
+  num_heads: 16
+
   enable_camera: True
   enable_depth: True
   enable_point: False
