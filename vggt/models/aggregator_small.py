@@ -181,7 +181,7 @@ class Aggregator(nn.Module):
         elif patch_embed == "mum":
             from vggt.encoders.mum import vit_large
             patch_embed_vit = vit_large().eval()
-            pretrained_weights = "/mimer/NOBACKUP/groups/snic2022-6-266/davnords/mv-ssl/pretrained_models/MuM_ViTLarge_BaseDecoder.pth"
+            pretrained_weights = "/mimer/NOBACKUP/groups/snic2022-6-266/davnords/mv-ssl/pretrained_models/MuM_ViTLarge_BaseDecoder_500k.pth"
             ckpt = torch.load(pretrained_weights, map_location='cpu', weights_only=False)
             patch_embed_vit.load_state_dict(ckpt['model'], strict=True)
         elif patch_embed == "crocov2":
@@ -195,6 +195,10 @@ class Aggregator(nn.Module):
         # Freeze patch embed
         for param in patch_embed_vit.parameters():
             param.requires_grad = False
+
+        for block in patch_embed_vit.blocks[20:]:
+            for param in block.parameters():
+                param.requires_grad = True
 
         self.patch_embed = patch_embed_vit
         del patch_embed_vit

@@ -18,49 +18,42 @@ import numpy as np
 from data.dataset_util import *
 from data.base_dataset import BaseDataset
 
+# TV 
+# donut
+# frisbee
+# toybus
+# bowl
+# book
+# car
+# toaster
+# hydrant
+# keyboard
+# parkingmeter
+# hotdog
+# handbag
+# motorcycle
+# pizza
+# teddybear
+# remote
+# backpack
+# cellphone
+# bench
+# stopsign
+
 
 SEEN_CATEGORIES = [
     "apple",
-    "backpack",
-    "banana",
-    "baseballbat",
-    "baseballglove",
-    "bench",
-    "bicycle",
-    "bottle",
     "bowl",
-    "broccoli",
-    "cake",
+    "book",
     "car",
-    "carrot",
-    "cellphone",
-    "chair",
-    "cup",
     "donut",
-    "hairdryer",
-    "handbag",
     "hydrant",
     "keyboard",
-    "laptop",
-    "microwave",
-    "motorcycle",
-    "mouse",
-    "orange",
     "parkingmeter",
-    "pizza",
-    "plant",
-    "stopsign",
-    "teddybear",
     "toaster",
-    "toilet",
     "toybus",
-    "toyplane",
-    "toytrain",
-    "toytruck",
     "tv",
-    "umbrella",
-    "vase",
-    "wineglass",
+    "frisbee",
 ]
 
 
@@ -101,7 +94,9 @@ class Co3dDataset(BaseDataset):
         if CO3D_DIR is None or CO3D_ANNOTATION_DIR is None:
             raise ValueError("Both CO3D_DIR and CO3D_ANNOTATION_DIR must be specified.")
 
-        category = sorted(SEEN_CATEGORIES)
+
+        # category = sorted(SEEN_CATEGORIES)
+        category = sorted(os.listdir(CO3D_DIR))
 
         if self.debug:
             category = ["apple"]
@@ -217,11 +212,13 @@ class Co3dDataset(BaseDataset):
                 depth_path = image_path.replace("/images", "/depths") + ".geometric.png"
                 depth_map = read_depth(depth_path, 1.0)
 
-                # mvs_mask_path = image_path.replace(
-                #     "/images", "/depth_masks"
-                # ).replace(".jpg", ".png")
-                # mvs_mask = cv2.imread(mvs_mask_path, cv2.IMREAD_GRAYSCALE) > 128
-                # depth_map[~mvs_mask] = 0
+                mvs_mask_path = image_path.replace(
+                    "/images", "/depth_masks"
+                ).replace(".jpg", ".png")
+                mvs_mask = cv2.imread(mvs_mask_path, cv2.IMREAD_GRAYSCALE)
+                if mvs_mask is not None:
+                    mvs_mask =  mvs_mask> 128
+                    depth_map[~mvs_mask] = 0
 
                 depth_map = threshold_depth_map(
                     depth_map, min_percentile=-1, max_percentile=98

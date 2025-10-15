@@ -7,12 +7,15 @@ import random
 import logging
 import warnings
 from vggt.models.vggt import VGGT
+from vggt.models.vggt_small import VGGT as VGGTsmall
 from vggt.utils.rotation import mat_to_quat
 from vggt.utils.load_fn import load_and_preprocess_images
 from vggt.utils.pose_enc import pose_encoding_to_extri_intri
 from vggt.utils.geometry import closed_form_inverse_se3
-from ba import run_vggt_with_ba
 import argparse
+# python test_co3d.py --model_path ../pretrained_models/model_tracker_fixed_e20.pt --co3d_dir /mimer/NOBACKUP/groups/3d-dl/co3dv2 co3d_anno_dir ../annotations/co3d_v2_annotations
+# python test_co3d.py --model_path ../training/logs/dinov3_exp004/ckpts/checkpoint.pt --co3d_dir /mimer/NOBACKUP/groups/3d-dl/co3dv2 co3d_anno_dir ../annotations/co3d_v2_annotations --encoder dinov3
+
 
 # Suppress DINO v2 logs
 logging.getLogger("dinov2").setLevel(logging.WARNING)
@@ -196,8 +199,11 @@ def setup_args():
     """Set up command-line arguments for the CO3D evaluation script."""
     parser = argparse.ArgumentParser(description='Test VGGT on CO3D dataset')
     parser.add_argument('--debug', action='store_true', help='Enable debug mode (only test on specific category)')
-    parser.add_argument('--use_ba', action='store_true', default=False, help='Enable bundle adjustment')
     parser.add_argument('--fast_eval', action='store_true', default=False, help='Only evaluate 10 sequences per category')
+    
+    parser.add_argument('--big_model', action='store_true', default=False, help='If to load the original VGGT')
+    parser.add_argument('--encoder', type=str, default="dinov3", help='Encoder to use in VGGTsmall')
+    
     parser.add_argument('--min_num_images', type=int, default=50, help='Minimum number of images for a sequence')
     parser.add_argument('--num_frames', type=int, default=10, help='Number of frames to use for testing')
     parser.add_argument('--co3d_dir', type=str, required=True, help='Path to CO3D dataset')
@@ -207,7 +213,7 @@ def setup_args():
     return parser.parse_args()
 
 
-def load_model(device, model_path):
+def load_model(device, model_path, big_model=False, encoder="dinov3"):
     """
     Load the VGGT model.
 
@@ -219,14 +225,27 @@ def load_model(device, model_path):
         Loaded VGGT model
     """
     print("Initializing and loading VGGT model...")
-    model = VGGT()
-    # _URL = "https://huggingface.co/facebook/VGGT-1B/resolve/main/model.pt"
-    # model.load_state_dict(torch.hub.load_state_dict_from_url(_URL))
+    if not big_model:
+        model = VGGTsmall(
+            img_size=336,
+            embed_dim=768,
+            depth=6,
+            num_heads=12,
+            patch_size=16,
+            patch_embed=encoder,
+            enable_camera=True,
+            enable_depth=True,
+            enable_point=True,
+            enable_track=False,
+        )
+    else:
+        model = VGGT()
     print(f"USING {model_path}")
-    model.load_state_dict(torch.load(model_path))
+    model.load_state_dict(torch.load(model_path)['model'], strict=True)
     model.eval()
     model = model.to(device)
     return model
+
 
 
 def set_random_seeds(seed):
@@ -243,7 +262,7 @@ def set_random_seeds(seed):
     torch.cuda.manual_seed_all(seed)
 
 
-def process_sequence(model, seq_name, seq_data, category, co3d_dir, min_num_images, num_frames, use_ba, device, dtype):
+def process_sequence(model, seq_name, seq_data, category, co3d_dir, min_num_images, num_frames, device, dtype):
     """
     Process a single sequence and compute pose errors.
 
@@ -255,7 +274,6 @@ def process_sequence(model, seq_name, seq_data, category, co3d_dir, min_num_imag
         co3d_dir: CO3D dataset directory
         min_num_images: Minimum number of images required
         num_frames: Number of frames to sample
-        use_ba: Whether to use bundle adjustment
         device: Device to run on
         dtype: Data type for model inference
 
@@ -287,24 +305,13 @@ def process_sequence(model, seq_name, seq_data, category, co3d_dir, min_num_imag
 
     images = load_and_preprocess_images(image_names).to(device)
 
-    if use_ba:
-        try:
-            pred_extrinsic = run_vggt_with_ba(model, images, image_names=image_names, dtype=dtype)
-        except Exception as e:
-            print(f"BA failed with error: {e}. Falling back to standard VGGT inference.")
-            with torch.no_grad():
-                with torch.cuda.amp.autocast(dtype=dtype):
-                    predictions = model(images)
-            with torch.cuda.amp.autocast(dtype=torch.float64):
-                extrinsic, intrinsic = pose_encoding_to_extri_intri(predictions["pose_enc"], images.shape[-2:])
-                pred_extrinsic = extrinsic[0]
-    else:
-        with torch.no_grad():
-            with torch.cuda.amp.autocast(dtype=dtype):
-                predictions = model(images)
-        with torch.cuda.amp.autocast(dtype=torch.float64):
-            extrinsic, intrinsic = pose_encoding_to_extri_intri(predictions["pose_enc"], images.shape[-2:])
-            pred_extrinsic = extrinsic[0]
+
+    with torch.no_grad():
+        with torch.cuda.amp.autocast(dtype=dtype):
+            predictions = model(images)
+    with torch.cuda.amp.autocast(dtype=torch.float64):
+        extrinsic, intrinsic = pose_encoding_to_extri_intri(predictions["pose_enc"], images.shape[-2:])
+        pred_extrinsic = extrinsic[0]
 
     with torch.cuda.amp.autocast(dtype=torch.float64):
         gt_extrinsic = torch.from_numpy(gt_extri).to(device)
@@ -335,21 +342,31 @@ def main():
     dtype = torch.bfloat16 if torch.cuda.is_available() and torch.cuda.get_device_capability()[0] >= 8 else torch.float16
 
     # Load model
-    model = load_model(device, model_path=args.model_path)
+    model = load_model(device, model_path=args.model_path, big_model=args.big_model, encoder=args.encoder)
 
     # Set random seeds
     set_random_seeds(args.seed)
 
     # Categories to evaluate
     SEEN_CATEGORIES = [
-        "apple", "backpack", "banana", "baseballbat", "baseballglove",
-        "bench", "bicycle", "bottle", "bowl", "broccoli",
-        "cake", "car", "carrot", "cellphone", "chair",
-        "cup", "donut", "hairdryer", "handbag", "hydrant",
-        "keyboard", "laptop", "microwave", "motorcycle", "mouse",
-        "orange", "parkingmeter", "pizza", "plant", "stopsign",
-        "teddybear", "toaster", "toilet", "toybus", "toyplane",
-        "toytrain", "toytruck", "tv", "umbrella", "vase", "wineglass",
+        "apple",
+        "bench",
+        "bowl", "cellphone", "frisbee", "hotdog",
+        # "keyboard",
+        "parkingmeter",
+        "teddybear",
+        "toybus",
+        "backpack",
+        "book",
+        "car",
+        "donut",
+        "handbag",
+        "hydrant",
+        "motorcycle",
+        "pizza",
+        "stopsign",
+        "toaster",
+        "tv"
     ]
 
     if args.debug:
@@ -388,10 +405,14 @@ def main():
                 print(f"Skipping {seq_name} (not found)")
                 continue
 
-            seq_rError, seq_tError = process_sequence(
-                model, seq_name, seq_data, category, args.co3d_dir,
-                args.min_num_images, args.num_frames, args.use_ba, device, dtype,
-            )
+            try: 
+                seq_rError, seq_tError = process_sequence(
+                    model, seq_name, seq_data, category, args.co3d_dir,
+                    args.min_num_images, args.num_frames, device, dtype,
+                )
+            except Exception as e:
+                print(f"Error processing {seq_name}: {e}")
+                continue
 
             print("-" * 50)
 

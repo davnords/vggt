@@ -18,6 +18,8 @@ import numpy as np
 import torch
 import cv2
 
+# https://github.com/phuang17/DeepMVS/issues/13
+
 def read_img_depth_pose(depth_path):
     raw_depth = np.asarray(imageio.imread(depth_path)[:])
     raw_depth = np.clip(raw_depth, 0.1, 1000.0)

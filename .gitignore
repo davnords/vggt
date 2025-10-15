@@ -152,3 +152,7 @@ slurm_outs/
 logs/
 .vscode/
 annotations/
+output_dir/
+constants.py
+wandb/
+/data/

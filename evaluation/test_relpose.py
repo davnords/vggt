@@ -7,7 +7,8 @@ import json
 import random
 import logging
 import warnings
-from vggt.models.vggt_small import VGGT
+from vggt.models.vggt_small import VGGT as VGGTsmall
+from vggt.models.vggt import VGGT
 from vggt.utils.rotation import mat_to_quat
 from vggt.utils.load_fn import load_and_preprocess_images
 from vggt.utils.pose_enc import pose_encoding_to_extri_intri
@@ -17,20 +18,25 @@ import gzip
 import json
 import os
 import logging
-from torchvision import transforms as TF
 from PIL import Image
-
-transforms = TF.Compose([
-    TF.Resize(640, interpolation=TF.InterpolationMode.BICUBIC),
-    TF.CenterCrop(512),
-    TF.ToTensor(),
-])
 
 # python evaluation/test_megadepth.py --data_dir /mimer/NOBACKUP/groups/snic2022-6-266/data/megadepth --anno_dir /mimer/NOBACKUP/groups/snic2022-6-266/davnords/vggt/annotations/megadepth/test.jgz
 # CUDA_VISIBLE_DEVICES=1 python evaluation/test_megadepth.py --data_dir /mimer/NOBACKUP/groups/snic2022-6-266/data/megadepth --anno_dir /mimer/NOBACKUP/groups/snic2022-6-266/davnords/vggt/annotations/megadepth/test.jgz --model_path /mimer/NOBACKUP/groups/snic2022-6-266/davnords/vggt/training/logs/dinov3_exp001/ckpts/checkpoint_15.pt 
 
 
 # python evaluation/test_megadepth.py --data_dir /mimer/NOBACKUP/groups/snic2022-6-266/data/megadepth --anno_dir /mimer/NOBACKUP/groups/snic2022-6-266/davnords/vggt/annotations/megadepth/test.jgz --model_path /mimer/NOBACKUP/groups/snic2022-6-266/davnords/vggt/training/logs/dinov3_exp001/ckpts/checkpoint_15.pt --fast_eval
+
+
+# For running MegaDepth-1500:
+# * python test_relpose.py --data_dir /mimer/NOBACKUP/groups/snic2022-6-266/data/megadepth --anno_dir /mimer/NOBACKUP/groups/snic2022-6-266/davnords/vggt/annotations/megadepth/test.jgz --model_path ../pretrained_models/model_tracker_fixed_e20.pt --fast_eval
+
+# For running ScanNet-1500:
+# python test_relpose.py --data_dir /mimer/NOBACKUP/groups/3d-dl/scannet/scannet_test_1500 --anno_dir /mimer/NOBACKUP/groups/snic2022-6-266/davnords/vggt/annotations/scannet/scannet_test_1500.jgz --model_path ../pretrained_models/model_tracker_fixed_e20.pt --fast_eval
+
+# Example on how to evaluate MuM on MegaDepth:
+# python test_relpose.py --data_dir /mimer/NOBACKUP/groups/snic2022-6-266/data/megadepth --anno_dir /mimer/NOBACKUP/groups/snic2022-6-266/davnords/vggt/annotations/megadepth/test.jgz --model_path ../training/logs/mum_exp001/ckpts/checkpoint.pt --fast_eval --encoder mum 
+# python test_relpose.py --data_dir /mimer/NOBACKUP/groups/3d-dl/scannet/scannet_test_1500 --anno_dir /mimer/NOBACKUP/groups/snic2022-6-266/davnords/vggt/annotations/scannet/scannet_test_1500.jgz --model_path ../training/logs/dinov3_exp001/ckpts/checkpoint.pt --fast_eval --encoder dinov3
+# python test_co3d.py --model_path ../training/logs/mum_exp001/ckpts/checkpoint.pt --fast_eval --encoder mum --co3d_dir /mimer/NOBACKUP/groups/3d-dl/co3dv2 --co3d_anno_dir ../annotations/co3d_v2_annotations
 
 # Suppress DINO v2 logs
 logging.getLogger("dinov2").setLevel(logging.WARNING)
@@ -214,9 +220,12 @@ def setup_args():
     """Set up command-line arguments for the CO3D evaluation script."""
     parser = argparse.ArgumentParser(description='Test VGGT on CO3D dataset')
     parser.add_argument('--debug', action='store_true', help='Enable debug mode (only test on specific category)')
-    parser.add_argument('--use_ba', action='store_true', default=False, help='Enable bundle adjustment')
     parser.add_argument('--fast_eval', action='store_true', default=False, help='Only evaluate 10 sequences per category')
-    parser.add_argument('--min_num_images', type=int, default=24, help='Minimum number of images for a sequence')
+    
+    parser.add_argument('--big_model', action='store_true', default=False, help='If to load the original VGGT')
+    parser.add_argument('--encoder', type=str, default="dinov3", help='Encoder to use in VGGTsmall')
+    
+    parser.add_argument('--min_num_images', type=int, default=10, help='Minimum number of images for a sequence')
     parser.add_argument('--num_frames', type=int, default=10, help='Number of frames to use for testing')
     parser.add_argument('--data_dir', type=str, required=True, help='Path to CO3D dataset')
     parser.add_argument('--anno_dir', type=str, required=True, help='Path to CO3D annotations')
@@ -225,7 +234,7 @@ def setup_args():
     return parser.parse_args()
 
 
-def load_model(device, model_path):
+def load_model(device, model_path, big_model=False, encoder="dinov3"):
     """
     Load the VGGT model.
 
@@ -237,21 +246,26 @@ def load_model(device, model_path):
         Loaded VGGT model
     """
     print("Initializing and loading VGGT model...")
-    model = VGGT(
-        enable_camera=True,
-        enable_depth=True,
-        enable_point=False,
-        enable_track=False,
-        patch_embed="crocov2",
-    )
-    # _URL = "https://huggingface.co/facebook/VGGT-1B/resolve/main/model.pt"
-    # model.load_state_dict(torch.hub.load_state_dict_from_url(_URL))
+    if not big_model:
+        model = VGGTsmall(
+            img_size=336,
+            embed_dim=768,
+            depth=6,
+            num_heads=12,
+            patch_size=16,
+            patch_embed=encoder,
+            enable_camera=True,
+            enable_depth=True,
+            enable_point=True,
+            enable_track=False,
+        )
+    else:
+        model = VGGT()
     print(f"USING {model_path}")
     model.load_state_dict(torch.load(model_path)['model'], strict=True)
     model.eval()
     model = model.to(device)
     return model
-
 
 def set_random_seeds(seed):
     """
@@ -267,17 +281,7 @@ def set_random_seeds(seed):
     torch.cuda.manual_seed_all(seed)
 
 
-def get_pytorch3d_RT(extri):
-    extri = np.array(extri)  # shape (3,4)
-    R_cw = extri[:, :3]
-    t_cw = extri[:, 3]
-
-    # Invert to world->camera
-    R = R_cw.T
-    T = -R @ t_cw
-    return R, T
-
-def process_sequence(model, seq_name, seq_data, category, data_dir, min_num_images, num_frames, use_ba, device, dtype):
+def process_sequence(model, seq_name, seq_data, category, data_dir, min_num_images, num_frames, device, dtype):
     """
     Process a single sequence and compute pose errors.
 
@@ -289,7 +293,6 @@ def process_sequence(model, seq_name, seq_data, category, data_dir, min_num_imag
         data_dir: CO3D dataset directory
         min_num_images: Minimum number of images required
         num_frames: Number of frames to sample
-        use_ba: Whether to use bundle adjustment
         device: Device to run on
         dtype: Data type for model inference
 
@@ -302,16 +305,7 @@ def process_sequence(model, seq_name, seq_data, category, data_dir, min_num_imag
 
     metadata = []
     for data in seq_data:
-        # Make sure translations are not ridiculous
-        # if data["T"][0] + data["T"][1] + data["T"][2] > 1e5:
-        #     return None, None
 
-        # extri = np.array(data["extri"])  # (3,4)
-        # R = extri[:, :3]   # (3,3)
-        # T = extri[:, 3]    # (3,)
-        # R, T = get_pytorch3d_RT(data['extri'])
-        # extri_opencv = convert_pt3d_RT_to_opencv(R, T)
-        # print('Extri Opencv: ', extri_opencv.)
         metadata.append({
             "filepath": data["filepath"],
             "extri": data["extri"],
@@ -324,12 +318,14 @@ def process_sequence(model, seq_name, seq_data, category, data_dir, min_num_imag
     gt_extri = [np.array(metadata[i]["extri"]) for i in ids]
     gt_extri = np.stack(gt_extri, axis=0)
 
-    images = []
-    for image_name in image_names:
-        assert os.path.exists(image_name), f"{image_name} does not exist"
-        img = Image.open(image_name).convert('RGB')
-        images.append(transforms(img))
-    images = torch.stack(images).to(device)
+    # images = []
+    # for image_name in image_names:
+    #     assert os.path.exists(image_name), f"{image_name} does not exist"
+    #     img = Image.open(image_name).convert('RGB')
+    #     images.append(transforms(img))
+    # images = torch.stack(images).to(device)
+
+    images = load_and_preprocess_images(image_names).to(device)
 
     # images = load_and_preprocess_images(image_names).to(device).unsqueeze(0)
 
@@ -369,7 +365,7 @@ def main():
     dtype = torch.bfloat16 if torch.cuda.is_available() and torch.cuda.get_device_capability()[0] >= 8 else torch.float16
 
     # Load model
-    model = load_model(device, model_path=args.model_path)
+    model = load_model(device, model_path=args.model_path, big_model=args.big_model, encoder=args.encoder)
 
     # Set random seeds
     set_random_seeds(args.seed)
@@ -388,15 +384,13 @@ def main():
 
         if args.fast_eval and len(scene_data)>=10:
             # scene_data = random.sample(scene_data, 10)
-            scene_data = scene_data[:25]
-
-        print("Number of sequences testing: ", len(scene_data))
+            scene_data = scene_data[:10]
 
         for i, seq_data in enumerate(scene_data):
             print("-" * 50)
             seq_rError, seq_tError = process_sequence(
                 model, i, seq_data, category, args.data_dir,
-                args.min_num_images, args.num_frames, args.use_ba, device, dtype,
+                args.min_num_images, args.num_frames, device, dtype,
             )
 
             print("-" * 50)
