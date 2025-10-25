@@ -156,3 +156,4 @@ output_dir/
 constants.py
 wandb/
 /data/
+outputs/

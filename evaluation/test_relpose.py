@@ -37,6 +37,7 @@ from PIL import Image
 # python test_relpose.py --data_dir /mimer/NOBACKUP/groups/snic2022-6-266/data/megadepth --anno_dir /mimer/NOBACKUP/groups/snic2022-6-266/davnords/vggt/annotations/megadepth/test.jgz --model_path ../training/logs/mum_exp001/ckpts/checkpoint.pt --fast_eval --encoder mum 
 # python test_relpose.py --data_dir /mimer/NOBACKUP/groups/3d-dl/scannet/scannet_test_1500 --anno_dir /mimer/NOBACKUP/groups/snic2022-6-266/davnords/vggt/annotations/scannet/scannet_test_1500.jgz --model_path ../training/logs/dinov3_exp001/ckpts/checkpoint.pt --fast_eval --encoder dinov3
 # python test_co3d.py --model_path ../training/logs/mum_exp001/ckpts/checkpoint.pt --fast_eval --encoder mum --co3d_dir /mimer/NOBACKUP/groups/3d-dl/co3dv2 --co3d_anno_dir ../annotations/co3d_v2_annotations
+# CUDA_VISIBLE_DEVICES=2 python test_relpose.py --data_dir /mimer/NOBACKUP/groups/snic2022-6-266/davnords/vggt/data/re10k/ --anno_dir /mimer/NOBACKUP/groups/snic2022-6-266/davnords/vggt/annotations/re10k/test.jgz --model_path ../training/logs/mum_exp004/ckpts/checkpoint.pt --fast_eval --encoder mum
 
 # Suppress DINO v2 logs
 logging.getLogger("dinov2").setLevel(logging.WARNING)
@@ -262,7 +263,8 @@ def load_model(device, model_path, big_model=False, encoder="dinov3"):
     else:
         model = VGGT()
     print(f"USING {model_path}")
-    model.load_state_dict(torch.load(model_path)['model'], strict=True)
+    state_dict = torch.load(model_path)['model']
+    model.load_state_dict(state_dict, strict=True)
     model.eval()
     model = model.to(device)
     return model
@@ -311,6 +313,7 @@ def process_sequence(model, seq_name, seq_data, category, data_dir, min_num_imag
             "extri": data["extri"],
         })
 
+    
     # Random sample num_frames images
     ids = np.random.choice(len(metadata), num_frames, replace=False)
 

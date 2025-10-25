@@ -195,10 +195,15 @@ class Aggregator(nn.Module):
         # Freeze patch embed
         for param in patch_embed_vit.parameters():
             param.requires_grad = False
-
-        for block in patch_embed_vit.blocks[20:]:
-            for param in block.parameters():
-                param.requires_grad = True
+        
+        # if patch_embed == "crocov2":
+        #     for block in patch_embed_vit.enc_blocks[20:]:
+        #         for param in block.parameters():
+        #             param.requires_grad = True
+        # else:
+        #     for block in patch_embed_vit.blocks[20:]:
+        #         for param in block.parameters():
+        #             param.requires_grad = True
 
         self.patch_embed = patch_embed_vit
         del patch_embed_vit

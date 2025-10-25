@@ -2,10 +2,11 @@
 set -e
 
 # ==== CONFIGURABLE VARIABLES ====
-MODEL="mum"
-GPUS_PER_NODE=4
-NODES=8
-TIME="2-10:00:00"
+MODEL="dinov3"
+GPUS_PER_NODE=1
+NODES=1
+TIME="0-00:10:00"
+# TIME="2-10:00:00"
 
 # ==== AUTO-DERIVED VARIABLES ====
 JOB_NAME="vggt:${MODEL}"
@@ -30,8 +31,6 @@ sbatch \
   --output=${OUTPUT_DIR}/%j/log.out \
   --error=${OUTPUT_DIR}/%j/log.err \
   --export=ALL,MODEL,GPUS_PER_NODE,NODES,OUTPUT_DIR \
-  --mail-type=ALL \
-  --mail-user=davnords@chalmers.se \
   <<'EOF'
 #!/usr/bin/env bash
 set -e
