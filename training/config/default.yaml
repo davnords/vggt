@@ -3,13 +3,13 @@ defaults:
 
 exp_name: exp001
 log_wandb: true
-img_size: 512
+img_size: 480
 num_workers: 8
 seed_value: 42
 accum_steps: 1    # We did not use gradient accumulation in our training, while if you suffer from OOM, you can try to use it.
 patch_size: 16
 val_epoch_freq: 10
-max_img_per_gpu: 48
+max_img_per_gpu: 192
 
 limit_train_batches: 1000
 limit_val_batches: 100
@@ -209,7 +209,7 @@ max_epochs: 100
 model:
   _target_: vggt.models.vggt_small.VGGT
   img_size: ${img_size}
-  embed_dim: 1024
+  embed_dim: 768
   depth: 6
   num_heads: 16
 
