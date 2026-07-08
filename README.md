@@ -1,5 +1,6 @@
 <div align="center">
 <h1>MuM: Feed-forward Reconstruction Evaluation</h1>
+</div>
 
 ## Overview
 This is the basis for our experiments on feed-forward reconstruction in the MuM paper. It is built around the idea of changing the backbone in VGGT from DINO to different encoders. This repo supports MuM, CroCo v2, and DINOv3.
